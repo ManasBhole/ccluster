@@ -43,13 +43,18 @@ type request struct {
 	auth   string
 }
 
-// fakeServer answers every request with status and body, recording what it received.
+// fakeServer answers every request with status and body, recording what it received. Like
+// argocd-server, it refuses a request other than GET whose Content-Type is not JSON.
 func fakeServer(t *testing.T, status int, body string, received *[]request) *httptest.Server {
 	t.Helper()
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*received = append(*received, request{
 			method: r.Method, path: r.URL.Path, query: r.URL.Query(), auth: r.Header.Get("Authorization"),
 		})
+		if r.Method != http.MethodGet && r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "Invalid content type", http.StatusUnsupportedMediaType)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))

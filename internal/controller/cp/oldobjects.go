@@ -96,8 +96,8 @@ func withoutOldObjects(
 
 // deleteOldObjects deletes the old objects of deletableKinds of finished, the Applications
 // of the components that have finished rolling out. One already being deleted is deleted
-// again, which changes nothing. All its requests share one readTimeout. See DESIGN.md,
-// "Objects deleted after rollout".
+// again, which changes nothing. A delete argocd-server refuses is only logged. All its
+// requests share one readTimeout. See DESIGN.md, "Objects deleted after rollout".
 func (r *CCLComponentSetReconciler) deleteOldObjects(
 	ctx context.Context, finished []*argocdv1alpha1.Application,
 ) error {
@@ -118,6 +118,14 @@ func (r *CCLComponentSetReconciler) deleteOldObjects(
 				Group: obj.Group, Version: obj.Version, Kind: obj.Kind, Namespace: obj.Namespace, Name: obj.Name,
 			})
 			if errors.Is(err, apiclient.ErrResourceGone) {
+				continue
+			}
+			if errors.Is(err, apiclient.ErrUnauthorized) {
+				// A refusal lasts until the account's policy changes, so returning it would
+				// only back off every pass of the set. The next pass tries again.
+				log.Info("Did not delete old object of Argo CD Application", "application", application.Name,
+					"namespace", application.Namespace, "kind", obj.Kind, "object", obj.Namespace+"/"+obj.Name,
+					"error", err.Error())
 				continue
 			}
 			if err != nil {

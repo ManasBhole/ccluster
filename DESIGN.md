@@ -982,7 +982,10 @@ once it is finished they all run the current spec.
   ExternalSecret waiting for its Secret, is deleted again on each pass, which changes
   nothing.
 - **Failure.** A failed delete fails the pass, which logs and retries it; it holds back
-  no component.
+  no component. A refused one (401 or 403) is only logged, and the next pass tries it
+  again. A refusal lasts until the account's policy changes. As an error it would back
+  off every pass of the set, up to controller-runtime's 1000s cap, in place of the 30s
+  retry of a pass that could not read a resource tree.
 - **Health.** Argo CD's aggregate health counts old objects, so an old ExternalSecret that
   never became Ready, or any old object being deleted (`Progressing`), would keep the
   component from finishing, and so from deleting it. `withoutOldObjects` drops them, and
@@ -994,9 +997,10 @@ once it is finished they all run the current spec.
 The costs: an existing Argo CD needs the account's three delete lines added by hand
 ([Development: Argo CD API token](docs/development.md#argo-cd-api-token)), and without
 them every delete fails with 403 and the old objects stay, shown only in the operator's
-log. An old object whose finalizer never finishes is deleted again, and logged, on every
-pass. And while ESO's controller is down, an ExternalSecret in wave -1 gets no
-status, so the sync operation stays open and the Application's next spec waits behind it.
+log. Once the lines are added, the set's next pass deletes them. An old object whose
+finalizer never finishes is deleted again, and logged, on every pass. And while ESO's
+controller is down, an ExternalSecret in wave -1 gets no status, so the sync operation
+stays open and the Application's next spec waits behind it.
 
 ### Teardown runs in reverse, one at a time
 
@@ -1141,8 +1145,9 @@ Argo CD's aggregate health alone falls short in three ways:
 
 The resource tree carries each object's health, Pods included. It comes from the same Argo
 CD function as the aggregate, so the tree alone corrects none of an object's verdicts. A
-chart's health function does. Neither the function nor the aggregate it starts from
-counts the old objects a chart no longer renders ("Objects deleted after rollout", §5).
+chart's health function does. When the tree is read, neither the function nor the
+aggregate it starts from counts the old objects a chart no longer renders ("Objects
+deleted after rollout", §5).
 
 A chart package may export a `Health` function beside `New`.
 `internal/registry/health_registry` owns its signature,
@@ -1187,7 +1192,11 @@ cluster:
 
 The reads of one component run under a 10-second deadline, which `ctx` carries. When the
 tree cannot be read, because argocd-server is down, the token is missing or the tree isn't
-cached yet, health is Argo CD's aggregate with reason `ResourceTreeUnavailable`. A function
+cached yet, health is Argo CD's aggregate with reason `ResourceTreeUnavailable`. That
+aggregate still counts old objects: without the tree the operator has no health of the
+rendered objects to correct it with. So an old object in worse health than every rendered
+one holds the component back, and keeps itself from being deleted, until the tree can be
+read. A function
 that panics, or reports a health the CRD refuses, also falls back to the aggregate, with
 `HealthFuncPanicked` or `InvalidHealth`. A component is never judged worse than Argo CD judges it because the
 operator could not do better.

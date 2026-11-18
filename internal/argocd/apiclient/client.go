@@ -230,6 +230,10 @@ func (c *Client) do(
 	// A Secret created from a file usually ends in a newline.
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
 	req.Header.Set("Accept", "application/json")
+	// argocd-server answers a request other than GET with 415 unless it names a type in
+	// its --api-content-types, which is application/json by default. A delete has no body
+	// but needs it all the same.
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
