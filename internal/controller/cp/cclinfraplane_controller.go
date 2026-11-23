@@ -14,6 +14,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -391,12 +392,39 @@ func (r *CCLInfraPlaneReconciler) finalize(
 const maxListedComponentSets = 10
 
 // waitForComponentSets reports Deleting=True on a CCLInfraPlane being deleted, naming the
-// CCLComponentSets, sorted, that still reference it. It changes nothing else.
+// CCLComponentSets, sorted, that still reference it.
+//
+// It deletes nothing, but it puts back the namespace's AppProject if it has gone: the
+// sets' Applications live in it while they tear down, and the plane stays Available,
+// which promises that it exists.
+//
+// Deleting the plane raised its generation. Available is carried forward to it, since the
+// plane keeps it true on purpose and the CCLComponentSet controller, which reads
+// status.observedGeneration, treats it as current. ClusterConfigApplied and DNSReady are
+// no longer kept up to date, so they stay at the generation they were computed for.
 func (r *CCLInfraPlaneReconciler) waitForComponentSets(
 	ctx context.Context,
 	infraPlane *cclusternvidiacomv1alpha1.CCLInfraPlane,
 	componentSets []string,
 ) error {
+	log := logf.FromContext(ctx)
+
+	op, err := r.createOrPatchProject(ctx, infraPlane)
+	switch {
+	case apimeta.IsNoMatchError(err):
+		// Argo CD is not installed, so there is no project to keep.
+	case errors.Is(err, errProjectConflict):
+		// Left as it is, as on a plane that is not being deleted; only an edit
+		// elsewhere can resolve it.
+		log.Info("Refused to overwrite AppProject claimed by another namespace",
+			"project", projectName(infraPlane.Namespace), "projectNamespace", r.ArgoCDNamespace)
+	case err != nil:
+		return err
+	case op != controllerutil.OperationResultNone:
+		log.Info("Applied Argo CD AppProject", "project", projectName(infraPlane.Namespace),
+			"projectNamespace", r.ArgoCDNamespace, "operation", op)
+	}
+
 	listed := componentSets
 	if len(listed) > maxListedComponentSets {
 		listed = listed[:maxListedComponentSets]
@@ -412,16 +440,21 @@ func (r *CCLInfraPlaneReconciler) waitForComponentSets(
 	deleting := apimeta.FindStatusCondition(infraPlane.Status.Conditions,
 		cclusternvidiacomv1alpha1.CCLInfraPlaneConditionDeleting)
 	if deleting == nil || deleting.Message != message {
-		logf.FromContext(ctx).Info("Kept CCLInfraPlane while CCLComponentSets reference it",
+		log.Info("Kept CCLInfraPlane while CCLComponentSets reference it",
 			"componentSets", componentSets)
 	}
 
-	return r.patchStatus(ctx, infraPlane, nil, metav1.Condition{
+	conditions := []metav1.Condition{{
 		Type:    cclusternvidiacomv1alpha1.CCLInfraPlaneConditionDeleting,
 		Status:  metav1.ConditionTrue,
 		Reason:  cclusternvidiacomv1alpha1.CCLInfraPlaneReasonComponentSetsRemaining,
 		Message: message,
-	})
+	}}
+	if available := apimeta.FindStatusCondition(infraPlane.Status.Conditions,
+		cclusternvidiacomv1alpha1.CCLInfraPlaneConditionAvailable); available != nil {
+		conditions = append(conditions, *available)
+	}
+	return r.patchStatus(ctx, infraPlane, nil, conditions...)
 }
 
 // componentSetsByInfraPlane maps the name of each CCLInfraPlane in namespace that a
@@ -546,7 +579,9 @@ func (r *CCLInfraPlaneReconciler) setUnavailable(
 // version, and an update would fail the optimistic-concurrency check even though the
 // status it computed is correct. A patch carries no such precondition. A NotFound is
 // ignored - the object was deleted while we were reconciling it, and there is no status
-// left to record.
+// left to record. A status that comes out unchanged is not written at all: a merge patch
+// with nothing in it is still a request, and a plane waiting in its finalizer comes back
+// here on every update of the CCLComponentSets that reference it.
 func (r *CCLInfraPlaneReconciler) patchStatus(
 	ctx context.Context,
 	infraPlane *cclusternvidiacomv1alpha1.CCLInfraPlane,
@@ -565,6 +600,9 @@ func (r *CCLInfraPlaneReconciler) patchStatus(
 	infraPlane.Status.ObservedGeneration = infraPlane.Generation
 	infraPlane.Status.Domain = r.domainOf(infraPlane)
 
+	if equality.Semantic.DeepEqual(infraPlane.Status, base.Status) {
+		return nil
+	}
 	return client.IgnoreNotFound(r.Status().Patch(ctx, infraPlane, client.MergeFrom(base)))
 }
 

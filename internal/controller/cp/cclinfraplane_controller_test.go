@@ -655,10 +655,19 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 			Expect(clusterConfigExists()).To(BeTrue())
 			Expect(watches.calls()).NotTo(ContainElement(HavePrefix("stop")))
 
-			By("staying Available for the set's teardown")
-			Expect(apimeta.IsStatusConditionTrue(infraPlane.Status.Conditions,
-				cclusternvidiacomv1alpha1.CCLInfraPlaneConditionAvailable)).To(BeTrue())
+			By("staying Available for the set's teardown, at the generation the deletion raised")
+			available := apimeta.FindStatusCondition(infraPlane.Status.Conditions,
+				cclusternvidiacomv1alpha1.CCLInfraPlaneConditionAvailable)
+			Expect(available).NotTo(BeNil())
+			Expect(available.Status).To(Equal(metav1.ConditionTrue))
+			Expect(available.ObservedGeneration).To(Equal(infraPlane.Generation))
 			Expect(infraPlane.Status.ObservedGeneration).To(Equal(infraPlane.Generation))
+
+			By("writing nothing when a later pass changes nothing")
+			resourceVersion := infraPlane.ResourceVersion
+			reconcileKey(typeNamespacedName)
+			Expect(k8sClient.Get(ctx, typeNamespacedName, infraPlane)).To(Succeed())
+			Expect(infraPlane.ResourceVersion).To(Equal(resourceVersion))
 
 			By("reporting the set it waits for")
 			condition := deleting(typeNamespacedName)
@@ -736,6 +745,50 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 
 			Expect(deleting(typeNamespacedName).Message).To(HaveSuffix("2 CCLComponentSet(s) " +
 				"referencing this CCLInfraPlane to be deleted: set-a, set-b"))
+		})
+
+		It("should name at most maxListedComponentSets of them, and count the rest", func() {
+			settle()
+			names := make([]string, 0, maxListedComponentSets+2)
+			for i := range maxListedComponentSets + 2 {
+				names = append(names, fmt.Sprintf("set-%02d", i))
+			}
+			// Created out of order, so the names are listed sorted, not as created.
+			for _, name := range slices.Backward(names) {
+				createComponentSet(types.NamespacedName{Name: name, Namespace: namespace},
+					nil, resourceName)
+			}
+
+			infraPlane := &cclusternvidiacomv1alpha1.CCLInfraPlane{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, infraPlane)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, infraPlane)).To(Succeed())
+			reconcileKey(typeNamespacedName)
+
+			Expect(deleting(typeNamespacedName).Message).To(HaveSuffix(fmt.Sprintf(
+				"%d CCLComponentSet(s) referencing this CCLInfraPlane to be deleted: %s and 2 more",
+				len(names), strings.Join(names[:maxListedComponentSets], ", "))))
+		})
+
+		// The waiting plane stays Available, which promises the project exists, and its
+		// sets' Applications live in the project while they tear down.
+		It("should put back an AppProject deleted while it waits for its CCLComponentSets", func() {
+			settle()
+			createComponentSet(types.NamespacedName{Name: "workloads", Namespace: namespace},
+				nil, resourceName)
+
+			infraPlane := &cclusternvidiacomv1alpha1.CCLInfraPlane{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, infraPlane)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, infraPlane)).To(Succeed())
+			reconcileKey(typeNamespacedName)
+
+			Expect(k8sClient.Delete(ctx, getProject(projectNamespacedName))).To(Succeed())
+			Eventually(func() bool {
+				return projectExists(projectNamespacedName)
+			}).Should(BeFalse())
+
+			reconcileKey(typeNamespacedName)
+			Expect(projectExists(projectNamespacedName)).To(BeTrue())
+			Expect(infraPlaneGone(typeNamespacedName)).To(BeFalse())
 		})
 
 		// The waiting plane's sets still have Applications in the project while they tear

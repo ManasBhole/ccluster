@@ -231,7 +231,11 @@ keeps its finalizer, and reports `Deleting=True/ComponentSetsRemaining` naming t
 set's teardown deletes each Application with Argo CD's cascade finalizer, and Argo CD reaches
 the cluster to uninstall the chart through the mirrored Secret; removed first, it would leave
 the Application, and so the set, Terminating, and the components running unmanaged. The plane
-stays `Available` meanwhile, its status kept current for its generation. The
+stays `Available` meanwhile, that condition carried forward to the generation the deletion
+raised, and it puts the project back should it go, since the sets' Applications live in it.
+`ClusterConfigApplied` and `DNSReady` are no longer kept up to date, and keep the generation
+they were computed for. A set that references the plane but is not itself being deleted
+reports `Validated=False/InfraPlaneDeleting` and releases nothing more onto it (§4). The
 `CCLComponentSet` watch (§7) brings the plane back once the last set is gone or no longer
 references it, and the finalizer then runs as above.
 
@@ -613,7 +617,9 @@ Each component is one Helm chart on one cluster:
   belong to. The generation is part of it because a condition outlives the spec it was
   computed for: a plane whose `clusterCredentialsRef` has just changed still reports the
   previous spec's `Available` until its own controller catches up, and the cluster that
-  condition described is no longer the one the ref names.
+  condition described is no longer the one the ref names. A plane being deleted stays
+  `Available` while the sets that reference it tear down (§3), so it is rejected by its
+  deletion timestamp instead: nothing new is released onto a cluster that is going away.
 - **`values` preserves the component's Helm configuration.** It is `apiextensionsv1.JSON`
   with `x-kubernetes-preserve-unknown-fields`, serialized as canonical YAML in Argo CD's
   `helm.values`. This preserves explicit nulls in the recorded comparison. The operator
@@ -1053,7 +1059,7 @@ forever despite syncing perfectly well, and since release requires `Healthy` **a
 | `CCLInfraPlane` | `ClusterConfigApplied` | The infra-plane cluster's `CCLClusterConfig` carries the plane's domain (§3). Reasons: `Applied`, `NotAvailable` (status `Unknown`), `CRDMissing`, `Conflict`, `AccessDenied`, `ClusterUnreachable`, `UnsupportedCredentials`, `InvalidCredentials`. |
 | `CCLInfraPlane` | `Deleting` | Set only on a plane being deleted: `True` while CCLComponentSets, named in the message, still reference it, so the finalizer waits (§3). Reason: `ComponentSetsRemaining`. |
 | `CCLInfraPlane` | `DNSReady` | external-dns has read the current `DNSEndpoint` pointing `*.<lb>.<domain>` at each of the plane's labelled LoadBalancers, and every name and address makes a valid record (§3). It does not mean the records were written. Reasons: `Published`, `Pending`, `LoadBalancerPending`, `InvalidLoadBalancer`, `DNSEndpointCRDMissing`, `DNSEndpointConflict`, `DNSEndpointError`. |
-| `CCLComponentSet` | `Validated` | Every `infraPlaneRef` resolves to a CCLInfraPlane that is `Available` for its current generation. Reasons: `ComponentsAccepted`, `InfraPlaneNotFound`, `InfraPlaneNotReady`. |
+| `CCLComponentSet` | `Validated` | Every `infraPlaneRef` resolves to a CCLInfraPlane that is `Available` for its current generation and not being deleted. Reasons: `ComponentsAccepted`, `InfraPlaneNotFound`, `InfraPlaneNotReady`, `InfraPlaneDeleting`. |
 | `CCLComponentSet` | `ComponentsApplied` | The current spec has been written for the components the rollout has reached; the message counts them (§5). Reasons: `ApplicationsCreated`, `ApplicationCRDMissing`, `ApplicationConflict`, `ApplicationFailed`. |
 | `CCLComponentSet` | `Progressing` | `True/WaveSyncing` while the rollout is advancing, with a message naming the component being waited on and whether it waits for Argo CD to sync the spec the operator wrote or for what it deployed to become healthy; `True/WaveSyncFailed` when the last sync of the current spec failed, with Argo CD's message, until a later sync of it succeeds; `True/ComponentRemoving` once every component has finished and the Applications of removed components are being deleted, naming the one being waited on; `True` with the `Validated` reason, such as `InfraPlaneNotFound`, when validation failed and the component being waited on needs the operator to write or delete its Application; `False/RolloutComplete` when every component has synced the current spec and is healthy, and no removed component's Application is left. |
 | `CCLClusterConfig` | `Verified` | Every `catalogs/cluster_base` component is installed in the infra-plane cluster and configured for it, and no two LoadBalancers share a name (§3a). Reasons: `ComponentsVerified`, `ComponentsNotVerified`, `LoadBalancerConflict`. |
