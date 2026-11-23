@@ -89,6 +89,10 @@ const (
 	// CCLInfraPlaneConditionDNSReady reports on the DNSEndpoint that has external-dns
 	// publish the plane's wildcard records.
 	CCLInfraPlaneConditionDNSReady = "DNSReady"
+	// CCLInfraPlaneConditionDeleting reports, on a CCLInfraPlane being deleted, the
+	// CCLComponentSets that still reference it. The plane keeps its registration until
+	// they are gone, so that their teardown can still reach the cluster.
+	CCLInfraPlaneConditionDeleting = "Deleting"
 )
 
 // The reasons of the CCLInfraPlane conditions.
@@ -117,6 +121,9 @@ const (
 	CCLInfraPlaneReasonDNSEndpointCRDMissing = "DNSEndpointCRDMissing"
 	CCLInfraPlaneReasonDNSEndpointConflict   = "DNSEndpointConflict"
 	CCLInfraPlaneReasonDNSEndpointError      = "DNSEndpointError"
+
+	// Deleting.
+	CCLInfraPlaneReasonComponentSetsRemaining = "ComponentSetsRemaining"
 )
 
 // +genclient
@@ -127,6 +134,7 @@ const (
 // +kubebuilder:printcolumn:name="ClusterConfig",type=string,JSONPath=`.status.conditions[?(@.type=="ClusterConfigApplied")].status`
 // +kubebuilder:printcolumn:name="Verified",type=string,JSONPath=`.status.clusterConfig.conditions[?(@.type=="Verified")].status`
 // +kubebuilder:printcolumn:name="DNS",type=string,JSONPath=`.status.conditions[?(@.type=="DNSReady")].status`
+// +kubebuilder:printcolumn:name="Deleting",type=string,JSONPath=`.status.conditions[?(@.type=="Deleting")].reason`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63 && self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="name must be a DNS label: at most 63 lowercase letters, digits and '-', starting and ending with a letter or digit"
 

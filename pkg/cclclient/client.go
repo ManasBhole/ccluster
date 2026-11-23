@@ -202,7 +202,9 @@ func (c *Client) ApplyInfraPlane(
 // DeleteInfraPlane removes the CCLInfraPlane called name and its credentials Secret.
 //
 // The CCLInfraPlane goes first so its finalizer can remove the mirrored Argo CD cluster
-// Secret. Either object already being gone is not an error, and neither is a namespace
+// Secret. The operator keeps the CCLInfraPlane, and the mirror, until no CCLComponentSet
+// references it, so deleting its sets too, in any order, uninstalls their components;
+// this call does not wait for that. Either object already being gone is not an error, and neither is a namespace
 // that does not exist: the API server answers both with the same 404. The namespace is
 // left in place.
 func (c *Client) DeleteInfraPlane(ctx context.Context, name string) error {

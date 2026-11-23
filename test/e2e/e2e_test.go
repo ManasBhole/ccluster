@@ -1502,6 +1502,59 @@ type: kubernetes.io/service-account-token
 				})
 			}
 
+			// Issue #299: a CCLInfraPlane deleted together with a CCLComponentSet that
+			// references it waits, in its finalizer, for the set's teardown, so Argo CD can
+			// still reach the cluster to uninstall every component. Run on the ex-cluster
+			// target only: there the mirrored Secret is the one thing that lets Argo CD
+			// reach the cluster, which is what deleting the plane first used to remove.
+			It("should uninstall every component when a CCLInfraPlane and its CCLComponentSet are deleted together", func() {
+				t := exCluster()
+				componentSetName := "e2e-delete-together"
+				planeName := "e2e-delete-together-plane"
+
+				By("registering the " + t.name + " plane")
+				t.register(planeName)
+				Eventually(func(g Gomega) {
+					out, err := utils.Run(exec.Command("kubectl", "get", "cclinfraplane",
+						planeName, "-n", crNamespace, "-o",
+						"jsonpath={.status.conditions[?(@.type=='Available')].status}"))
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(strings.TrimSpace(out)).To(Equal("True"))
+				}, 2*time.Minute).Should(Succeed())
+
+				By("rolling out a two-component CCLComponentSet")
+				applyOrderedCCLComponentSet(componentSetName, planeName)
+				Eventually(func(g Gomega) {
+					g.Expect(componentSetCondition(componentSetName, conditionProgressing, "reason")).
+						To(Equal("RolloutComplete"))
+				}, 10*time.Minute, 2*time.Second).Should(Succeed())
+
+				By("deleting the plane, its credentials Secret and the set in one call, plane first")
+				_, err := utils.Run(exec.Command("kubectl", "delete", "-n", crNamespace, "--wait=false",
+					"cclinfraplane/"+planeName, "secret/"+credentialsSecretName(planeName),
+					"cclcomponentset/"+componentSetName))
+				Expect(err).NotTo(HaveOccurred())
+
+				// State-based: the plane is read first, so if it is already gone, the set,
+				// read afterwards, must be gone too.
+				By("confirming the plane outlives the set")
+				Eventually(func(g Gomega) {
+					_, planeErr := utils.Run(exec.Command("kubectl", "get", "cclinfraplane", planeName, "-n", crNamespace))
+					_, setErr := utils.Run(exec.Command("kubectl", "get", "cclcomponentset", componentSetName, "-n", crNamespace))
+					if planeErr != nil {
+						Expect(setErr).To(HaveOccurred(), "CCLInfraPlane deleted while its CCLComponentSet remained")
+					}
+					g.Expect(planeErr).To(HaveOccurred(), "CCLInfraPlane should be gone")
+				}, 8*time.Minute, 2*time.Second).Should(Succeed())
+
+				By("verifying every component was uninstalled from the infra-plane cluster")
+				for _, ns := range []string{"argo-rollouts", "keda"} {
+					out, err := utils.Run(t.cluster.Kubectl("get", "deployments", "-n", ns, "-o", "name"))
+					Expect(err).NotTo(HaveOccurred())
+					Expect(strings.TrimSpace(out)).To(BeEmpty(), "Deployments left behind in "+ns)
+				}
+			})
+
 			// The generated Application's SyncPolicy always sets Automated{SelfHeal:true}
 			// (cclcomponentset_builder.go), but nothing exercises that Argo CD actually
 			// acts on it. This mutates a live resource Argo CD manages and confirms it

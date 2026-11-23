@@ -30,6 +30,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="DNSReady")].status
       name: DNS
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Deleting")].reason
+      name: Deleting
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
