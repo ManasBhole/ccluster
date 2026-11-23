@@ -241,6 +241,17 @@ deletes the plane and its sets together, in any order. A set stuck Terminating, 
 on an Argo CD hook that never finishes, keeps the plane too, which is correct: the plane must
 not go while one of its sets is still uninstalling.
 
+The wait reads the sets' specs, not their Applications, which leaves a window. A component
+removed from a set's spec keeps its Application, still deployed to the plane, until
+`pruneNext` deletes it once the rest of the rollout has finished (§5); a set deleted
+meanwhile still has to remove it first. A component whose `infraPlaneRef` moved to another
+plane likewise keeps its Application on the old plane until the rollout rewrites it. While
+no spec names the plane, its deletion goes ahead: the mirrored Secret goes, and Argo CD can
+no longer reach the cluster to uninstall the component, which is left running unmanaged.
+To avoid it, delete a plane only once its sets' `status.componentSyncStatuses` list no
+removed component (one with `removal` set) whose Application's `destination.name` is the
+plane's: the status does not name the plane (§8).
+
 The credentials Secret may go with the plane, as `ccluster unregister` and
 `CCLClient.delete_infraplane` delete it: the teardown works through the mirrored Secret,
 which the finalizer keeps until the end.
@@ -1246,6 +1257,10 @@ runs one worker (§3).
   environment, Istio CNI paths chosen by cloud provider. None of that is ported.
 - **No rollout timeout.** A component that never converges blocks every release and update
   after it, and every removal, indefinitely.
+- **A plane's deletion waits only for specs.** It does not see an Application still on the
+  plane after its component was removed from a set's spec or moved to another plane, so
+  deleting the plane during that removal leaves the component running unmanaged (§3).
+  Also counting the Applications whose `destination.name` is the plane's would close this.
 - **One catalog per operator.** `--catalog-repo-url` and `--catalog-revision` are global, so
   a single control plane cannot mix catalogs or revisions.
 - **Real Verifiers.** Not every cluster_base chart has a check of its own yet; the rest

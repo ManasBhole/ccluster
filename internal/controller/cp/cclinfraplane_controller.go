@@ -428,6 +428,10 @@ func (r *CCLInfraPlaneReconciler) waitForComponentSets(
 // CCLComponentSet references to the sorted names of the CCLComponentSets that do,
 // Terminating ones included. infraPlaneRef is same-namespace, so no other namespace's
 // sets can reference these planes.
+//
+// Only specs are read. An Application still on a plane after its component was removed
+// from the spec, or moved to another plane, is not seen; DESIGN.md §3 describes the
+// window that leaves.
 func (r *CCLInfraPlaneReconciler) componentSetsByInfraPlane(
 	ctx context.Context,
 	namespace string,
