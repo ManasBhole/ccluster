@@ -5,11 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 // Package gatewayistio describes the values of catalogs/cluster_base/gateway_istio, the
 // cluster's shared Gateway API Gateway, gateway-system/ccl-gateway, which istiod serves.
-//
-// The Gateway has only an HTTP listener on port 80, for ACME HTTP-01 challenges. Each
-// deployment attaches its own HTTPS listener and certificate through a ListenerSet in
-// its namespace, and its routes to that ListenerSet. Both are admitted only from
-// namespaces labelled ccluster.nvidia.com/tenant: "true", which namespace_base sets.
+// templates/gateway.yaml describes its listeners and which namespaces may attach to it.
 package gatewayistio
 
 import (
@@ -26,8 +22,8 @@ const (
 
 // Values is the top-level values document for catalogs/cluster_base/gateway_istio.
 //
-// It is empty: the Gateway's name, namespace and listeners are what the deployment
-// charts and acme-ca reference, so nothing in the chart varies per cluster.
+// It is empty: other charts attach to the Gateway by its fixed name and namespace, and
+// nothing in the chart varies per cluster.
 type Values struct{}
 
 // New returns the gateway-istio chart entry, installed into namespace with values. The
