@@ -387,8 +387,9 @@ var _ = Describe("CCLComponentSet Controller", func() {
 					}
 					return append(rules, removed...)
 				})
-				// A schema change reaches the API server's handler asynchronously.
-				// A name too long for any component name.
+				// The probe's name leaves no room for any component name. The schema change
+				// reaches the API server's handler asynchronously, so wait until it rejects
+				// the probe.
 				probe := &cclusternvidiacomv1alpha1.CCLComponentSet{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 52), Namespace: namespace},
 					Spec: cclusternvidiacomv1alpha1.CCLComponentSetSpec{
@@ -707,18 +708,6 @@ var _ = Describe("CCLComponentSet Controller", func() {
 			Expect(err.Error()).To(ContainSubstring("component names must be unique"))
 		})
 
-		It("should reject a name too long to be a label value", func() {
-			err := k8sClient.Create(ctx, &cclusternvidiacomv1alpha1.CCLComponentSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      strings.Repeat("a", 64),
-					Namespace: namespace,
-				},
-				Spec: cclusternvidiacomv1alpha1.CCLComponentSetSpec{Components: components()},
-			})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("at most 63 characters"))
-		})
-
 		It("should reject a component whose Application name is longer than a Helm release name", func() {
 			createWith := func(name, component string) error {
 				return k8sClient.Create(ctx, &cclusternvidiacomv1alpha1.CCLComponentSet{
@@ -782,7 +771,8 @@ var _ = Describe("CCLComponentSet Controller", func() {
 				onPlaneA(paddedComponentName("new", 54)))
 			err := k8sClient.Update(ctx, componentSet)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("must be at most 53 characters"))
+			Expect(err.Error()).To(ContainSubstring(
+				"the maximum component name length for this CCLComponentSet is 35"))
 
 			By("dropping the finalizer once its components are gone")
 			Expect(k8sClient.Get(ctx, componentSetKey, componentSet)).To(Succeed())

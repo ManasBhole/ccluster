@@ -281,8 +281,9 @@ type ComponentSyncStatus struct {
 	Removal ComponentRemoval `json:"removal,omitempty"`
 }
 
-// The two rules below cap each Application name, the Helm release name, at 53 characters;
-// DESIGN.md §4 says why update checks only new component names, and why two rules.
+// The two rules below cap each Application name, the Helm release name, at 53 characters,
+// which also keeps the CCLComponentSet name short enough to be a label value. DESIGN.md §4
+// says why update checks only new component names, and why two rules.
 
 // +genclient
 // +kubebuilder:object:root=true
@@ -290,7 +291,6 @@ type ComponentSyncStatus struct {
 // +kubebuilder:printcolumn:name="Applied",type=string,JSONPath=`.status.conditions[?(@.type=="ComponentsApplied")].status`
 // +kubebuilder:printcolumn:name="Progress",type=string,JSONPath=`.status.conditions[?(@.type=="Progressing")].reason`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:validation:XValidation:rule="self.metadata.name.size() <= 63",message="name must be at most 63 characters, because it is used as a label value on the generated Argo CD Applications"
 // +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || self.spec.components.all(c, self.metadata.name.size() + 1 + c.name.size() <= 53)",optionalOldSelf=true,fieldPath=".spec.components",message="each Argo CD Application name, <CCLComponentSet name>-<component name>, is a Helm release name and must be at most 53 characters",messageExpression="self.metadata.name.size() < 52 ? 'each Argo CD Application name, <CCLComponentSet name>-<component name>, is a Helm release name and must be at most 53 characters; the maximum component name length for this CCLComponentSet is %d'.format([52 - self.metadata.name.size()]) : 'each Argo CD Application name, <CCLComponentSet name>-<component name>, is a Helm release name and must be at most 53 characters; the CCLComponentSet name must be at most 51 characters'"
 // +kubebuilder:validation:XValidation:rule="self.spec.components.all(c, self.metadata.name.size() + 1 + c.name.size() <= 53 || oldSelf.spec.components.exists(o, o.name == c.name))",fieldPath=".spec.components",message="each Argo CD Application name, <CCLComponentSet name>-<component name>, is a Helm release name and must be at most 53 characters",messageExpression="self.metadata.name.size() < 52 ? 'each Argo CD Application name, <CCLComponentSet name>-<component name>, is a Helm release name and must be at most 53 characters; the maximum component name length for this CCLComponentSet is %d'.format([52 - self.metadata.name.size()]) : 'each Argo CD Application name, <CCLComponentSet name>-<component name>, is a Helm release name and must be at most 53 characters; the CCLComponentSet name must be at most 51 characters'"
 

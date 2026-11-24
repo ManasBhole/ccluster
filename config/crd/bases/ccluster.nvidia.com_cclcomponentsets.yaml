@@ -328,9 +328,6 @@ spec:
         - spec
         type: object
         x-kubernetes-validations:
-        - message: name must be at most 63 characters, because it is used as a label
-            value on the generated Argo CD Applications
-          rule: self.metadata.name.size() <= 63
         - fieldPath: .spec.components
           message: each Argo CD Application name, <CCLComponentSet name>-<component
             name>, is a Helm release name and must be at most 53 characters
