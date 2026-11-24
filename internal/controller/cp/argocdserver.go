@@ -18,7 +18,7 @@ import (
 )
 
 // ArgoCDServer is the part of argocd-server's API that the controllers read to judge
-// component health, and that the rollout deletes old objects through.
+// component health, and that the rollout prunes objects through.
 // *apiclient.Client implements it. It is an interface so that tests can use a fake.
 type ArgoCDServer interface {
 	ResourceTree(ctx context.Context, app apiclient.ApplicationRef) (*apiclient.ResourceTree, error)

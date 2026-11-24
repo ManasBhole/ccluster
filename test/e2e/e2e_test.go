@@ -1372,25 +1372,25 @@ type: kubernetes.io/service-account-token
 						g.Expect(strings.TrimSpace(out)).To(Equal("Healthy/"))
 					}, 2*time.Minute).Should(Succeed())
 
-					// DESIGN.md §5, "Objects deleted after rollout". No catalog chart keeps an old
+					// DESIGN.md §5, "Pruning after rollout". No catalog chart keeps a prunable
 					// object yet, so the spec makes two: objects that carry the Application's
-					// tracking annotation and a chart's annotations for an old object, but that
+					// tracking annotation and a chart's annotations for a prunable object, but that
 					// the chart does not render. Argo CD lists both requiresPruning. The operator
-					// deletes the ConfigMap through argocd-server, which proves the cp chart's
-					// delete lines, and keeps the Secret, a kind it does not delete.
-					By("adding an old ConfigMap and an old Secret to the Application")
-					const oldConfigMap, oldSecret = "e2e-old-config", "e2e-old-secret"
+					// prunes the ConfigMap through argocd-server, which proves the cp chart's
+					// delete lines, and keeps the Secret, a kind it does not prune.
+					By("adding a prunable ConfigMap and a prunable Secret to the Application")
+					const prunableConfigMap, prunableSecret = "e2e-prunable-config", "e2e-prunable-secret"
 					DeferCleanup(func() {
-						_, _ = utils.Run(t.cluster.Kubectl("delete", "configmap", oldConfigMap,
+						_, _ = utils.Run(t.cluster.Kubectl("delete", "configmap", prunableConfigMap,
 							"-n", "argo-rollouts", "--ignore-not-found"))
-						_, _ = utils.Run(t.cluster.Kubectl("delete", "secret", oldSecret,
+						_, _ = utils.Run(t.cluster.Kubectl("delete", "secret", prunableSecret,
 							"-n", "argo-rollouts", "--ignore-not-found"))
 					})
 					// Argo CD names the Application in its tracking annotations as
 					// <namespace>_<name>, since it lives outside the Argo CD namespace.
 					tracking := crNamespace + "_" + applicationName
-					oldObjects := t.cluster.Kubectl("apply", "-f", "-")
-					oldObjects.Stdin = strings.NewReader(fmt.Sprintf(`apiVersion: v1
+					prunableObjects := t.cluster.Kubectl("apply", "-f", "-")
+					prunableObjects.Stdin = strings.NewReader(fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
   name: %[2]s
@@ -1409,32 +1409,32 @@ metadata:
     argocd.argoproj.io/tracking-id: %[1]s:/Secret:argo-rollouts/%[3]s
     argocd.argoproj.io/sync-options: Prune=false
     argocd.argoproj.io/compare-options: IgnoreExtraneous
-`, tracking, oldConfigMap, oldSecret))
-					_, err = utils.Run(oldObjects)
+`, tracking, prunableConfigMap, prunableSecret))
+					_, err = utils.Run(prunableObjects)
 					Expect(err).NotTo(HaveOccurred())
 
 					// The Secret, not the ConfigMap: the ConfigMap may be gone before this reads.
-					By("waiting for Argo CD to list the old objects as requiresPruning")
+					By("waiting for Argo CD to mark both objects requiresPruning")
 					Eventually(func(g Gomega) {
 						out, err := utils.Run(exec.Command("kubectl", "get", "application", applicationName,
 							"-n", crNamespace, "-o",
-							`jsonpath={.status.resources[?(@.name=="`+oldSecret+`")].requiresPruning}`))
+							`jsonpath={.status.resources[?(@.name=="`+prunableSecret+`")].requiresPruning}`))
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(strings.TrimSpace(out)).To(Equal("true"))
 					}, 2*time.Minute).Should(Succeed())
 
-					By("waiting for the operator to delete the old ConfigMap through argocd-server")
+					By("waiting for the operator to prune the ConfigMap through argocd-server")
 					Eventually(func(g Gomega) {
-						out, err := utils.Run(t.cluster.Kubectl("get", "configmap", oldConfigMap,
+						out, err := utils.Run(t.cluster.Kubectl("get", "configmap", prunableConfigMap,
 							"-n", "argo-rollouts", "--ignore-not-found", "-o", "name"))
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(strings.TrimSpace(out)).To(BeEmpty())
 					}, 2*time.Minute).Should(Succeed())
 
-					// One pass requests the deletes of all a component's old objects, so the
+					// One pass requests the deletes of all a component's prunable objects, so the
 					// Secret's turn has passed by the time the ConfigMap is gone.
-					By("keeping the old Secret, a kind the operator does not delete")
-					_, err = utils.Run(t.cluster.Kubectl("get", "secret", oldSecret, "-n", "argo-rollouts"))
+					By("keeping the Secret, a kind the operator does not prune")
+					_, err = utils.Run(t.cluster.Kubectl("get", "secret", prunableSecret, "-n", "argo-rollouts"))
 					Expect(err).NotTo(HaveOccurred())
 
 					// Deleted inline, not via DeferCleanup: each CR's finalizer needs the
@@ -1456,8 +1456,8 @@ metadata:
 					_, err = utils.Run(exec.Command("kubectl", "get", "application", applicationName, "-n", crNamespace))
 					Expect(err).To(HaveOccurred(), "Application was not cleaned up")
 
-					By("verifying Argo CD's cascade deleted the old Secret, despite Prune=false")
-					out, err = utils.Run(t.cluster.Kubectl("get", "secret", oldSecret,
+					By("verifying Argo CD's cascade deleted the Secret, despite Prune=false")
+					out, err = utils.Run(t.cluster.Kubectl("get", "secret", prunableSecret,
 						"-n", "argo-rollouts", "--ignore-not-found", "-o", "name"))
 					Expect(err).NotTo(HaveOccurred())
 					Expect(strings.TrimSpace(out)).To(BeEmpty())

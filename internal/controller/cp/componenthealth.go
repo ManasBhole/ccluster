@@ -103,7 +103,7 @@ func judge(
 	}
 	// The objects the chart no longer renders are on their way out: they are judged
 	// neither by the chart's function nor in the aggregate it starts from.
-	return callHealthFunc(ctx, healthFunc, entry, withoutOldObjects(catalogs.Observation{
+	return callHealthFunc(ctx, healthFunc, entry, withoutPrunableObjects(catalogs.Observation{
 		ApplicationHealth: aggregate,
 		Resources:         observedResources(tree),
 		Reader:            applicationReader{argoCD: argoCD, app: app},

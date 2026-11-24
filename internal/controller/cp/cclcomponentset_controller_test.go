@@ -2069,15 +2069,15 @@ var _ = Describe("CCLComponentSet Controller", func() {
 				Expect(argoCD.treesRead()).To(Equal([]apiclient.ApplicationRef{ref(firstComponent)}))
 			})
 
-			It("should delete a finished component's old objects of the deletable kinds", func() {
+			It("should prune a finished component's objects of the prunable kinds", func() {
 				argoCD := &fakeArgoCD{}
 				judgeWith(argoCD)
 
 				// Argo CD lists every object of the comparison; requiresPruning marks those the
 				// chart no longer renders.
-				resource := func(group, kind, name string, old bool) map[string]any {
+				resource := func(group, kind, name string, prunable bool) map[string]any {
 					return map[string]any{"group": group, "version": "v1", "kind": kind,
-						"namespace": "argo-rollouts", "name": name, "requiresPruning": old}
+						"namespace": "argo-rollouts", "name": name, "requiresPruning": prunable}
 				}
 				encoded, err := json.Marshal(map[string]any{"status": map[string]any{"resources": []any{
 					resource("apps", "Deployment", "web", false),
@@ -2121,7 +2121,7 @@ var _ = Describe("CCLComponentSet Controller", func() {
 				argoCD.deleteErr = apiclient.ErrUnauthorized
 				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: componentSetKey})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(argoCD.deleted()).To(HaveLen(6), "both old objects were tried again")
+				Expect(argoCD.deleted()).To(HaveLen(6), "both prunable objects were tried again")
 			})
 
 			It("should judge by Argo CD's aggregate health when the resource tree cannot be read, and come back", func() {

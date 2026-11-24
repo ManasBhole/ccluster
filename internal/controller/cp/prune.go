@@ -20,13 +20,15 @@ import (
 	"github.com/NVIDIA/ccluster/internal/argocd/apiclient"
 )
 
-// An old object is one a component's chart no longer renders but Argo CD still keeps:
-// status.resources marks it requiresPruning. See DESIGN.md, "Objects deleted after rollout".
+// A prunable object is one a component's chart no longer renders but Argo CD still keeps:
+// status.resources marks it requiresPruning, and Prune=false stops Argo CD pruning it at
+// the start of the sync. The operator prunes it once the component has finished. See
+// DESIGN.md, "Pruning after rollout".
 
-// deletableKinds are the kinds of old object the operator deletes, and the only kinds the
-// cp chart's policy lets its Argo CD account delete. An old object of another kind stays:
-// a chart that marks one Prune=false means to keep it.
-var deletableKinds = []schema.GroupKind{
+// prunableKinds are the kinds of prunable object the operator prunes, and the only kinds
+// the cp chart's policy lets its Argo CD account delete. One of another kind stays: a
+// chart that marks one Prune=false means to keep it.
+var prunableKinds = []schema.GroupKind{
 	{Group: "external-secrets.io", Kind: "ExternalSecret"},
 	{Group: "", Kind: "ConfigMap"},
 	{Group: "resource.k8s.io", Kind: "ResourceClaimTemplate"},
@@ -45,17 +47,18 @@ func treeKey(r catalogs.ResourceRef) objectKey {
 	return objectKey{Group: r.Group, Kind: r.Kind, Namespace: r.Namespace, Name: r.Name}
 }
 
-// withoutOldObjects leaves application's old objects, and what they own, out of observed.
-// Argo CD's aggregate health still counts them, so where it is worse than every rendered
-// object left, it becomes the worst of those. See DESIGN.md, "Objects deleted after rollout".
-func withoutOldObjects(
+// withoutPrunableObjects leaves application's prunable objects, and what they own, out of
+// observed. Argo CD's aggregate health still counts them, so where it is worse than every
+// rendered object left, it becomes the worst of those. See DESIGN.md, "Pruning after
+// rollout".
+func withoutPrunableObjects(
 	observed catalogs.Observation, application *argocdv1alpha1.Application,
 ) catalogs.Observation {
-	old := map[objectKey]bool{}
-	for _, r := range application.OldObjects() {
-		old[statusKey(r)] = true
+	prunable := map[objectKey]bool{}
+	for _, r := range application.PrunableObjects() {
+		prunable[statusKey(r)] = true
 	}
-	if len(old) == 0 {
+	if len(prunable) == 0 {
 		return observed
 	}
 
@@ -71,7 +74,7 @@ func withoutOldObjects(
 		}
 	}
 	for _, r := range observed.Resources {
-		if r.Rendered() && old[treeKey(r.ResourceRef)] {
+		if r.Rendered() && prunable[treeKey(r.ResourceRef)] {
 			leaveOut(r.ResourceRef)
 		}
 	}
@@ -94,11 +97,12 @@ func withoutOldObjects(
 	return observed
 }
 
-// deleteOldObjects deletes the old objects of deletableKinds of finished, the Applications
-// of the components that have finished rolling out. One already being deleted is deleted
-// again, which changes nothing. A delete argocd-server refuses is only logged. All its
-// requests share one readTimeout. See DESIGN.md, "Objects deleted after rollout".
-func (r *CCLComponentSetReconciler) deleteOldObjects(
+// pruneFinished prunes the objects of prunableKinds of finished, the Applications of the
+// components that have finished rolling out, by deleting them through argocd-server. One
+// already being deleted is deleted again, which changes nothing. A delete argocd-server
+// refuses is only logged. All its requests share one readTimeout. See DESIGN.md, "Pruning
+// after rollout".
+func (r *CCLComponentSetReconciler) pruneFinished(
 	ctx context.Context, finished []*argocdv1alpha1.Application,
 ) error {
 	if r.ArgoCD == nil {
@@ -110,8 +114,8 @@ func (r *CCLComponentSetReconciler) deleteOldObjects(
 
 	var errs []error
 	for _, application := range finished {
-		for _, obj := range application.OldObjects() {
-			if !slices.Contains(deletableKinds, schema.GroupKind{Group: obj.Group, Kind: obj.Kind}) {
+		for _, obj := range application.PrunableObjects() {
+			if !slices.Contains(prunableKinds, schema.GroupKind{Group: obj.Group, Kind: obj.Kind}) {
 				continue
 			}
 			err := r.ArgoCD.DeleteResource(ctx, applicationRef(application), apiclient.ResourceRef{
@@ -123,17 +127,17 @@ func (r *CCLComponentSetReconciler) deleteOldObjects(
 			if errors.Is(err, apiclient.ErrUnauthorized) {
 				// A refusal lasts until the account's policy changes, so returning it would
 				// only back off every pass of the set. The next pass tries again.
-				log.Info("Did not delete old object of Argo CD Application", "application", application.Name,
+				log.Info("Did not prune Argo CD Application object", "application", application.Name,
 					"namespace", application.Namespace, "kind", obj.Kind, "object", obj.Namespace+"/"+obj.Name,
 					"error", err.Error())
 				continue
 			}
 			if err != nil {
-				errs = append(errs, fmt.Errorf("deleting %s %s/%s of Application %s: %w",
+				errs = append(errs, fmt.Errorf("pruning %s %s/%s of Application %s: %w",
 					obj.Kind, obj.Namespace, obj.Name, application.Name, err))
 				continue
 			}
-			log.Info("Requested deletion of old object of Argo CD Application", "application", application.Name,
+			log.Info("Requested pruning of Argo CD Application object", "application", application.Name,
 				"namespace", application.Namespace, "kind", obj.Kind, "object", obj.Namespace+"/"+obj.Name)
 		}
 	}

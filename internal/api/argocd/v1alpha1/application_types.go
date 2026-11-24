@@ -109,18 +109,18 @@ func (a *Application) OperationInProgress() bool {
 	return a.Operation != nil || (a.OperationPhase() != "" && !OperationCompleted(a.OperationPhase()))
 }
 
-// OldObjects returns the objects Argo CD tracks that the chart no longer renders.
-func (a *Application) OldObjects() []ResourceStatus {
+// PrunableObjects returns the objects Argo CD tracks that the chart no longer renders.
+func (a *Application) PrunableObjects() []ResourceStatus {
 	if a.Status == nil {
 		return nil
 	}
-	var old []ResourceStatus
+	var prunable []ResourceStatus
 	for _, r := range a.Status.Resources {
 		if r.RequiresPruning {
-			old = append(old, r)
+			prunable = append(prunable, r)
 		}
 	}
-	return old
+	return prunable
 }
 
 // ApplicationSpec is the desired state of an Argo CD Application.

@@ -31,7 +31,7 @@ var (
 
 	// ErrResourceGone: the object is gone from the cluster, or from argocd-server's cached
 	// tree, since the caller saw it: typically a Pod replaced since the tree was read, or
-	// an old object already deleted.
+	// an object already pruned.
 	ErrResourceGone = errors.New("resource no longer exists")
 )
 

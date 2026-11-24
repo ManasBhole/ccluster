@@ -726,8 +726,8 @@ reads them: an Application's resource tree, the live manifest of one node, and t
 node's events. argocd-server answers with Argo CD's own credentials for the destination
 cluster, so the cp operator still never connects to an infra-plane itself.
 
-The client also deletes one kind of object: an old object a finished component's chart
-no longer renders ("Objects deleted after rollout" below).
+The client also deletes one kind of object: one a finished component's chart no longer
+renders, which the operator prunes ("Pruning after rollout" below).
 
 The client authenticates as `ccluster-cp`, an Argo CD account the cp chart declares with
 `apiKey` only (no password, no UI login) and four RBAC lines. `applications, get, */*`
@@ -952,7 +952,7 @@ while its Application is terminating is not released yet (`liveApplications` abo
 has no entry in `componentSyncStatuses` or `componentHealthStatuses`; a new Application is
 created once the old one is gone.
 
-### Objects deleted after rollout
+### Pruning after rollout
 
 Some objects are read by pods under a name that changes with each revision: a workload's
 ExternalSecrets, named from their references (`<name>-env-<hash>`), inference's config
@@ -969,14 +969,15 @@ A chart gives such an object three annotations:
 | `argocd.argoproj.io/sync-options: Prune=false` | Kept when a later revision stops rendering it. `status.resources` marks it `requiresPruning` |
 | `argocd.argoproj.io/compare-options: IgnoreExtraneous` | The kept object does not make the Application OutOfSync, so `currentSpecSynced` and automated sync are unaffected |
 
-The operator calls an object `requiresPruning` marks an old object. Once a component is
-finished, `applyComponents` deletes its old objects of `deletableKinds` (ExternalSecret,
-ConfigMap, ResourceClaimTemplate) through argocd-server, in the same pass, and does not
-wait for them to go: Argo CD drops them from `status.resources`, and that Application
-event brings the next pass. Old objects of other kinds stay, since a chart that marks one
-`Prune=false` means to keep it; the allowlisted kinds can no longer mean that. The timing
-is per component, not per set: only the component's own pods read these objects, and
-once it is finished they all run the current spec.
+An object `requiresPruning` marks is prunable, and the operator prunes it in place of Argo
+CD, later. Once a component is finished, `applyComponents` prunes its prunable objects of
+`prunableKinds` (ExternalSecret, ConfigMap, ResourceClaimTemplate) by deleting them
+through argocd-server (`pruneFinished`), in the same pass, and does not wait for them to
+go: Argo CD drops them from `status.resources`, and that Application event brings the next
+pass. Prunable objects of other kinds stay, since a chart that marks one `Prune=false`
+means to keep it; the allowlisted kinds can no longer mean that. The timing is per
+component, not per set: only the component's own pods read these objects, and once it is
+finished they all run the current spec.
 
 - **Already going.** One still listed while it is being deleted, such as an
   ExternalSecret waiting for its Secret, is deleted again on each pass, which changes
@@ -986,19 +987,20 @@ once it is finished they all run the current spec.
   again. A refusal lasts until the account's policy changes. As an error it would back
   off every pass of the set, up to controller-runtime's 1000s cap, in place of the 30s
   retry of a pass that could not read a resource tree.
-- **Health.** Argo CD's aggregate health counts old objects, so an old ExternalSecret that
-  never became Ready, or any old object being deleted (`Progressing`), would keep the
-  component from finishing, and so from deleting it. `withoutOldObjects` drops them, and
-  what they own, from what a chart's health function sees. Where the aggregate is worse
-  than every rendered object that remains, it becomes the worst of those.
-- **Removal and teardown.** Deleting an Application deletes its old objects too: Argo CD's
-  cascade ignores `Prune=false`.
+- **Health.** Argo CD's aggregate health counts prunable objects, so a prunable
+  ExternalSecret that never became Ready, or any prunable object being deleted
+  (`Progressing`), would keep the component from finishing, and so from pruning it.
+  `withoutPrunableObjects` drops them, and what they own, from what a chart's health
+  function sees. Where the aggregate is worse than every rendered object that remains, it
+  becomes the worst of those.
+- **Removal and teardown.** Deleting an Application deletes its prunable objects too: Argo
+  CD's cascade ignores `Prune=false`.
 
 The costs: an existing Argo CD needs the account's three delete lines added by hand
 ([Development: Argo CD API token](docs/development.md#argo-cd-api-token)), and without
-them every delete fails with 403 and the old objects stay, shown only in the operator's
-log. Once the lines are added, the set's next pass deletes them. An old object whose
-finalizer never finishes is deleted again, and logged, on every pass. And while ESO's
+them every delete fails with 403 and the prunable objects stay, shown only in the
+operator's log. Once the lines are added, the set's next pass prunes them. A prunable
+object whose finalizer never finishes is deleted again, and logged, on every pass. And while ESO's
 controller is down, an ExternalSecret in wave -1 gets no status, so the sync operation
 stays open and the Application's next spec waits behind it.
 
@@ -1146,8 +1148,8 @@ Argo CD's aggregate health alone falls short in three ways:
 The resource tree carries each object's health, Pods included. It comes from the same Argo
 CD function as the aggregate, so the tree alone corrects none of an object's verdicts. A
 chart's health function does. When the tree is read, neither the function nor the
-aggregate it starts from counts the old objects a chart no longer renders ("Objects
-deleted after rollout", §5).
+aggregate it starts from counts the prunable objects, those a chart no longer renders
+("Pruning after rollout", §5).
 
 A chart package may export a `Health` function beside `New`.
 `internal/registry/health_registry` owns its signature,
@@ -1193,10 +1195,10 @@ cluster:
 The reads of one component run under a 10-second deadline, which `ctx` carries. When the
 tree cannot be read, because argocd-server is down, the token is missing or the tree isn't
 cached yet, health is Argo CD's aggregate with reason `ResourceTreeUnavailable`. That
-aggregate still counts old objects: without the tree the operator has no health of the
-rendered objects to correct it with. So an old object in worse health than every rendered
-one holds the component back, and keeps itself from being deleted, until the tree can be
-read. A function
+aggregate still counts prunable objects: without the tree the operator has no health of
+the rendered objects to correct it with. So a prunable object in worse health than every
+rendered one holds the component back, and keeps itself from being pruned, until the tree
+can be read. A function
 that panics, or reports a health the CRD refuses, also falls back to the aggregate, with
 `HealthFuncPanicked` or `InvalidHealth`. A component is never judged worse than Argo CD judges it because the
 operator could not do better.

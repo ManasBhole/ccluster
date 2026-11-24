@@ -322,7 +322,7 @@ argo-cd:
 
     ## The Argo CD account the operator uses argocd-server's API as: it reads an
     ## Application's resource tree, and the live manifests and events of the objects in
-    ## it, none of which is in the Application object, and deletes the old objects a
+    ## it, none of which is in the Application object, and prunes the objects a
     ## finished component's chart no longer renders. `apiKey` lets it hold API tokens;
     ## without `login` it has no password and cannot use the UI.
     ##

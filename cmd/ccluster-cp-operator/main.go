@@ -53,7 +53,7 @@ var (
 	catalogRevision string
 )
 
-// The argocd-server Service the operator reads Application trees and deletes old objects
+// The argocd-server Service the operator reads Application trees and prunes objects
 // through, and the Secret holding its token, both in argoCDNamespace. Set by flags, for
 // the same reason as argoCDNamespace.
 var (

@@ -518,7 +518,7 @@ per-tenant credentials.
 The operator reads Applications' resource trees, live manifests and events from
 argocd-server's API as `ccluster-cp`, an Argo CD account that may read every Application
 and delete any ExternalSecret, ConfigMap or ResourceClaimTemplate of one (step 2). Argo CD
-does not limit the deletes to old objects; only the operator's code does.
+does not limit the deletes to the objects the operator prunes; only the operator's code does.
 It authenticates with a
 token stored under the key `token` of Secret `ccluster-cp-argocd-token` (`--argocd-token-secret`)
 in the Argo CD namespace (`--argocd-namespace`). The token does not expire and is created
@@ -556,7 +556,7 @@ may update the account, such as admin or an SSO user with `role:admin`:
    `policy.ccluster-cp.csv`, with the four lines of the cp chart's `values.yaml`
    (`argo-cd.configs.rbac`): read every Application, and delete any ExternalSecret,
    ConfigMap or ResourceClaimTemplate of one. The operator uses the delete lines only for
-   the old objects it deletes after rollout. Without them those old objects stay, and the
+   the objects it prunes after rollout. Without them those objects stay, and the
    operator logs the 403.
 3. Generate a token: `argocd account generate-token --account ccluster-cp`.
 4. Store it: `kubectl -n <argocd-namespace> create secret generic ccluster-cp-argocd-token
