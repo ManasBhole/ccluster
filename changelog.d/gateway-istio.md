@@ -10,4 +10,6 @@
 ### Changed
 - `catalogs/namespace_base` labels the tenant namespace `ccluster.nvidia.com/tenant: "true"`
   and admits traffic from `gateway-system` in its NetworkPolicy and AuthorizationPolicy, so
-  the shared Gateway can attach the namespace's listeners and routes and reach its pods.
+  the shared Gateway can attach the namespace's listeners and routes and reach its pods. Its
+  NetworkPolicy also lets the namespace's pods reach the Gateway's pods, which a call to a
+  deployment's public host in the same cluster reaches when the LoadBalancer reports an IP.
