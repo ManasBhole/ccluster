@@ -959,6 +959,43 @@ var _ = Describe("CCLComponentSet Controller", func() {
 			Expect(progressing.Message).To(ContainSubstring(secondComponent))
 		})
 
+		// A remaining component whose new spec cannot be written until validation passes
+		// cannot finish, so it still holds removal up (DESIGN.md §5).
+		It("should keep a removed component while a remaining one's changed spec waits for validation", func() {
+			createInfraPlane(planeA, true)
+			createInfraPlane(planeB, true)
+			createComponentSet(components())
+			settle()
+			release(firstComponent)
+			Expect(applicationExists(secondComponent)).To(BeTrue())
+
+			By("making the first component's plane not Available")
+			infraPlane := &cclusternvidiacomv1alpha1.CCLInfraPlane{}
+			Expect(k8sClient.Get(ctx,
+				types.NamespacedName{Name: planeA, Namespace: namespace}, infraPlane)).To(Succeed())
+			apimeta.SetStatusCondition(&infraPlane.Status.Conditions, metav1.Condition{
+				Type:               cclusternvidiacomv1alpha1.CCLInfraPlaneConditionAvailable,
+				Status:             metav1.ConditionFalse,
+				Reason:             cclusternvidiacomv1alpha1.CCLInfraPlaneReasonSecretNotFound,
+				Message:            "set by the test",
+				ObservedGeneration: infraPlane.Generation,
+			})
+			Expect(k8sClient.Status().Update(ctx, infraPlane)).To(Succeed())
+
+			By("changing the first component and removing the second in one edit")
+			updated := components()[:1]
+			updated[0].Values = &apiextensionsv1.JSON{Raw: []byte(`{"replicaCount":3}`)}
+			setComponents(updated)
+
+			// The first one is still Healthy and Synced, on its previous spec.
+			componentSet := reconcileAndGet()
+			Expect(terminating(secondComponent)).To(BeFalse(),
+				"removed while the remaining component's new spec was not written")
+			progressing := conditionOf(componentSet, cclusternvidiacomv1alpha1.CCLComponentSetConditionProgressing)
+			Expect(progressing.Reason).To(Equal(cclusternvidiacomv1alpha1.CCLComponentSetReasonInfraPlaneNotReady))
+			Expect(progressing.Message).To(ContainSubstring(firstComponent))
+		})
+
 		It("should write a later component's changed spec only after the components before it finish", func() {
 			createInfraPlane(planeA, true)
 			createInfraPlane(planeB, true)
