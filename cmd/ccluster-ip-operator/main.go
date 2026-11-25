@@ -42,8 +42,8 @@ func main() {
 		Name:             "ccluster-ip-operator",
 		LeaderElectionID: "ip.ccluster.nvidia.com",
 		Scheme:           scheme,
-		// Leases, which argo_rollouts' Verifier lists by name. Caching them would watch
-		// every node's heartbeat Lease and every controller's leader Lease.
+		// Leases, which the argo_rollouts and cert_manager Verifiers list by name. Caching
+		// them would watch every node's heartbeat Lease and every controller's leader Lease.
 		UncachedObjects:  []client.Object{&coordinationv1.Lease{}},
 		SetupControllers: setupControllers,
 	})

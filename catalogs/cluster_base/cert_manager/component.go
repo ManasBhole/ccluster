@@ -66,6 +66,13 @@ func New(
 // upstream chart and manifests fix it, whatever the release is called.
 const Webhook = "webhook.cert-manager.io"
 
+// ControllerLease is the coordination.k8s.io Lease the cert-manager controller holds
+// while it leads. The name is a constant in its source (cmd/controller/app/controller.go),
+// whatever the release; the Lease lives in kube-system unless the chart's
+// global.leaderElection.namespace moves it. Leader election is on by default, and this
+// chart's two controller replicas need it.
+const ControllerLease = "cert-manager-controller"
+
 // crds are the CustomResourceDefinitions of the kinds the catalog applies: final_stack's
 // ClusterIssuer, and the Issuers and Certificates ingress_nginx creates for its
 // admission webhook.
@@ -82,13 +89,19 @@ var crds = []string{
 // registration of the webhook Webhook has the CA bundle cainjector injects and a Service
 // with a ready endpoint behind it. It then checks that the CRD of each of those kinds
 // exists. The webhook runs without them, and the upstream chart installs them only
-// with installCRDs set, which is off by default.
+// with installCRDs set, which is off by default. Last, it checks that a controller holds
+// ControllerLease and has renewed it lately, since without one no Certificate is
+// issued. A ClusterIssuer's Ready condition cannot show that: it is stored status, and
+// stays True after the controller stops.
 //
-// It finds the webhook by its entry name and follows it to its Service, and the CRDs by
-// their names, so cert-manager passes under any release name, in any namespace, however
-// it was installed. It does not check that the controller issues certificates:
-// final_stack's ClusterIssuer is where that shows. Nothing here depends on the cluster's
-// domain, so the CCLClusterConfig spec is not consulted.
+// A controller that stops cleanly releases the Lease, and one that crashes leaves it to
+// go stale; both fail here, as does a controller started with leader election off,
+// which holds no Lease.
+//
+// It finds the webhook by its entry name and follows it to its Service, and the CRDs
+// and the Lease by their names, so cert-manager passes under any release name, in any
+// namespace, however it was installed. Nothing here depends on the cluster's domain, so
+// the CCLClusterConfig spec is not consulted.
 func Verify(ctx context.Context, r client.Reader, _ cclusternvidiacomv1alpha1.CCLClusterConfigSpec) error {
 	if err := catalogs.VerifyValidatingWebhookServed(ctx, r, Webhook); err != nil {
 		return err
@@ -98,5 +111,5 @@ func Verify(ctx context.Context, r client.Reader, _ cclusternvidiacomv1alpha1.CC
 			return err
 		}
 	}
-	return nil
+	return catalogs.VerifyLeaseRenewed(ctx, r, ControllerLease)
 }

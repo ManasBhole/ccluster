@@ -207,9 +207,9 @@ func uninstallClusterBaseChart(c utils.Cluster, release, namespace string) {
 
 // installClusterBase installs the cluster_base charts that have a Verifier of their own,
 // which fail on a bare kind cluster: argo_rollouts, for the Rollout CRD and its
-// controller's Lease, cert_manager, for its admission webhook, metrics_server, for the
-// resource metrics API, and kube_prometheus_stack, for the Prometheus Service the
-// catalog's consumers address.
+// controller's Lease, cert_manager, for its admission webhook, CRDs and controller's
+// Lease, metrics_server, for the resource metrics API, and kube_prometheus_stack, for
+// the Prometheus Service the catalog's consumers address.
 func installClusterBase(c utils.Cluster) {
 	GinkgoHelper()
 
