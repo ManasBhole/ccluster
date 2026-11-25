@@ -7,11 +7,13 @@ package certmanager
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -50,8 +52,23 @@ func webhookAt(release, namespace, webhook string) []client.Object {
 	}
 }
 
-// TestVerify pins the check to cert-manager's webhook entry name and nothing else: the
-// release name and namespace a cluster installed it under do not matter.
+// crdsExcept returns the CustomResourceDefinitions the catalog's cert-manager kinds need,
+// leaving out those named in missing.
+func crdsExcept(missing ...string) []client.Object {
+	var objs []client.Object
+	for _, name := range []string{
+		"certificates.cert-manager.io", "clusterissuers.cert-manager.io", "issuers.cert-manager.io",
+	} {
+		if !slices.Contains(missing, name) {
+			objs = append(objs, &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: name}})
+		}
+	}
+	return objs
+}
+
+// TestVerify pins the check to cert-manager's webhook entry name and CRD names and
+// nothing else: the release name and namespace a cluster installed it under do not
+// matter.
 func TestVerify(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -60,11 +77,22 @@ func TestVerify(t *testing.T) {
 	}{
 		{
 			name:    "as cluster_base installs it",
-			objects: webhookAt("cluster-base-cert-manager", "cert-manager", "webhook.cert-manager.io"),
+			objects: append(webhookAt("cluster-base-cert-manager", "cert-manager", "webhook.cert-manager.io"), crdsExcept()...),
 		},
 		{
 			name:    "another release and namespace",
+			objects: append(webhookAt("cm", "security", "webhook.cert-manager.io"), crdsExcept()...),
+		},
+		{
+			// The upstream chart with installCRDs left off.
+			name:    "webhook served without the CRDs",
 			objects: webhookAt("cm", "security", "webhook.cert-manager.io"),
+			want:    "CustomResourceDefinition certificates.cert-manager.io not found",
+		},
+		{
+			name:    "one CRD missing",
+			objects: append(webhookAt("cm", "security", "webhook.cert-manager.io"), crdsExcept("issuers.cert-manager.io")...),
+			want:    "CustomResourceDefinition issuers.cert-manager.io not found",
 		},
 		{
 			name: "not installed",
@@ -81,7 +109,8 @@ func TestVerify(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
 			for _, add := range []func(*runtime.Scheme) error{
-				admissionregistrationv1.AddToScheme, corev1.AddToScheme, discoveryv1.AddToScheme,
+				admissionregistrationv1.AddToScheme, apiextensionsv1.AddToScheme,
+				corev1.AddToScheme, discoveryv1.AddToScheme,
 			} {
 				if err := add(scheme); err != nil {
 					t.Fatal(err)

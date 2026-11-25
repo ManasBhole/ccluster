@@ -144,9 +144,13 @@ func VerifyServiceReady(ctx context.Context, r client.Reader, namespace, name st
 //
 // Served means the entry's Service has a ready endpoint, by VerifyServiceReady. An entry
 // that reaches its webhook by URL rather than through a Service has no endpoints to
-// read and passes on its CA bundle alone. With more than one entry of that name, one
-// that passes is enough; otherwise the error names the first, in configuration name
-// order.
+// read and passes on its CA bundle alone.
+//
+// Every entry of that name must pass. The API server calls each entry whose rules match
+// a write, so a second configuration registering the webhook, such as one an earlier
+// installation left behind pointing at a deleted Service, rejects those writes while the
+// current one is served. The error names the first entry that fails, in configuration
+// name order.
 //
 // r must be able to read admissionregistration.k8s.io ValidatingWebhookConfigurations,
 // Services and discovery.k8s.io EndpointSlices; the ip operator's ClusterRole grants all
@@ -160,24 +164,23 @@ func VerifyValidatingWebhookServed(ctx context.Context, r client.Reader, webhook
 		return configs.Items[i].Name < configs.Items[j].Name
 	})
 
-	var errs []error
+	found := false
 	for _, config := range configs.Items {
 		for _, w := range config.Webhooks {
 			if w.Name != webhook {
 				continue
 			}
-			err := verifyWebhookClient(ctx, r, w.ClientConfig)
-			if err == nil {
-				return nil
+			found = true
+			if err := verifyWebhookClient(ctx, r, w.ClientConfig); err != nil {
+				return fmt.Errorf("webhook %s in ValidatingWebhookConfiguration %s: %w",
+					webhook, config.Name, err)
 			}
-			errs = append(errs, fmt.Errorf("webhook %s in ValidatingWebhookConfiguration %s: %w",
-				webhook, config.Name, err))
 		}
 	}
-	if len(errs) == 0 {
+	if !found {
 		return fmt.Errorf("no ValidatingWebhookConfiguration has webhook %s", webhook)
 	}
-	return errs[0]
+	return nil
 }
 
 // verifyWebhookClient checks that the API server can call a webhook: it trusts the

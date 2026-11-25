@@ -276,6 +276,10 @@ func TestVerifyValidatingWebhookServed(t *testing.T) {
 		Name:         hook,
 		ClientConfig: admissionregistrationv1.WebhookClientConfig{URL: &url},
 	}
+	// Left by an earlier installation whose namespace was deleted: webhook
+	// configurations are cluster-scoped and outlive it.
+	stale := entry(hook, true)
+	stale.ClientConfig.Service = &admissionregistrationv1.ServiceReference{Namespace: "old", Name: "web"}
 
 	tests := []struct {
 		name    string
@@ -329,11 +333,21 @@ func TestVerifyValidatingWebhookServed(t *testing.T) {
 			want:    "webhook check.example.com in ValidatingWebhookConfiguration release-a: no CA bundle injected",
 		},
 		{
-			name: "one of two registrations passes",
+			name: "both registrations pass",
 			objects: append([]client.Object{
-				webhookConfig("release-a", entry(hook, false)),
+				webhookConfig("release-a", entry(hook, true)),
 				webhookConfig("release-b", entry(hook, true)),
 			}, served...),
+		},
+		{
+			// The API server calls both, so the stale one rejects writes the served one
+			// would accept.
+			name: "a stale registration beside a served one",
+			objects: append([]client.Object{
+				webhookConfig("release-a", entry(hook, true)),
+				webhookConfig("release-b", stale),
+			}, served...),
+			want: "webhook check.example.com in ValidatingWebhookConfiguration release-b: no Service old/web found",
 		},
 		{
 			name: "neither registration passes",

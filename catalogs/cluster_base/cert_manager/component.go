@@ -66,18 +66,37 @@ func New(
 // upstream chart and manifests fix it, whatever the release is called.
 const Webhook = "webhook.cert-manager.io"
 
+// crds are the CustomResourceDefinitions of the kinds the catalog applies: final_stack's
+// ClusterIssuer, and the Issuers and Certificates ingress_nginx creates for its
+// admission webhook.
+var crds = []string{
+	"certificates.cert-manager.io",
+	"clusterissuers.cert-manager.io",
+	"issuers.cert-manager.io",
+}
+
 // Verify checks that cert-manager accepts the resources the catalog applies: final_stack's
 // acme-ca ClusterIssuer, and the Issuers and Certificates ingress_nginx creates for its
 // admission webhook. The API server sends every cert-manager.io write to cert-manager's
-// webhook and rejects it while the webhook is unreachable, so Verify checks that the
-// webhook Webhook is registered, that cainjector has injected its CA bundle, and that the
-// Service behind it has a ready endpoint.
+// webhook and rejects it while the webhook is unreachable, so Verify checks that every
+// registration of the webhook Webhook has the CA bundle cainjector injects and a Service
+// with a ready endpoint behind it. It then checks that the CRD of each of those kinds
+// exists. The webhook runs without them, and the upstream chart installs them only
+// with installCRDs set, which is off by default.
 //
-// It finds the webhook by its entry name and follows it to its Service, so cert-manager
-// passes under any release name, in any namespace, however it was installed. It does not
-// check that the controller issues certificates: final_stack's ClusterIssuer is where
-// that shows. Nothing here depends on the cluster's domain, so the CCLClusterConfig spec
-// is not consulted.
+// It finds the webhook by its entry name and follows it to its Service, and the CRDs by
+// their names, so cert-manager passes under any release name, in any namespace, however
+// it was installed. It does not check that the controller issues certificates:
+// final_stack's ClusterIssuer is where that shows. Nothing here depends on the cluster's
+// domain, so the CCLClusterConfig spec is not consulted.
 func Verify(ctx context.Context, r client.Reader, _ cclusternvidiacomv1alpha1.CCLClusterConfigSpec) error {
-	return catalogs.VerifyValidatingWebhookServed(ctx, r, Webhook)
+	if err := catalogs.VerifyValidatingWebhookServed(ctx, r, Webhook); err != nil {
+		return err
+	}
+	for _, crd := range crds {
+		if err := catalogs.VerifyCRDExists(ctx, r, crd); err != nil {
+			return err
+		}
+	}
+	return nil
 }
