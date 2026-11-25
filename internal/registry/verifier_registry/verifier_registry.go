@@ -89,7 +89,7 @@ func Get() *Registry {
 	r.Register(externalsecrets.Chart, externalsecrets.Verify)
 	r.Register(finalstack.Chart, alwaysVerified)
 	r.Register(fluentbit.Chart, alwaysVerified)
-	r.Register(gatewayapi.Chart, alwaysVerified)
+	r.Register(gatewayapi.Chart, gatewayapi.Verify)
 	r.Register(gpuoperator.Chart, alwaysVerified)
 	r.Register(ingressnginx.Chart, alwaysVerified)
 	r.Register(istio.Chart, alwaysVerified)

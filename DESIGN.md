@@ -1231,10 +1231,11 @@ runs one worker (§3).
   a single control plane cannot mix catalogs or revisions.
 - **Real Verifiers.** Not every cluster_base chart has a check of its own yet; the rest
   are still registered with `alwaysVerified` in `verifierregistry.Get()`. The checks that
-  exist look for what a component provides: a CRD, a Service with a ready endpoint, an
-  admission webhook with an injected CA bundle and a ready Service, an `Available`
-  APIService, or a controller Lease renewed lately. All but the CRD also show that the
-  component's pods run. None checks that a CRD is Established.
+  exist look for what a component provides: a CRD, a served API version, a Service with a
+  ready endpoint, an admission webhook with an injected CA bundle and a ready Service, an
+  `Available` APIService, or a controller Lease renewed lately. All but the CRD and the
+  served API version also show that the component's pods run. None checks that a CRD is
+  Established.
 - **Per-component verification results.** The `CCLClusterConfig` status reaches the
   `CCLInfraPlane` (§3), but per-component results are not broken out of the `Verified`
   condition's message yet.

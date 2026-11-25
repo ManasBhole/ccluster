@@ -8,13 +8,10 @@ package externalsecrets
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -78,9 +75,9 @@ const WebhookConfiguration = "externalsecret-validate"
 // webhook is the entry of WebhookConfiguration that validates ExternalSecrets.
 const webhook = "validate.externalsecret.external-secrets.io"
 
-// externalSecrets is the API the ExternalSecrets planned in #125 will be written in,
-// which ESO serves from v0.16.0.
-var externalSecrets = schema.GroupVersionKind{Group: "external-secrets.io", Version: "v1", Kind: "ExternalSecretList"}
+// externalSecret is the kind and version the ExternalSecrets planned in #125 will be
+// written in, which ESO serves from v0.16.0.
+var externalSecret = schema.GroupVersionKind{Group: "external-secrets.io", Version: "v1", Kind: "ExternalSecret"}
 
 // Verify checks that ESO serves what ExternalSecrets need: the external-secrets.io/v1
 // API, and a webhook with a ready endpoint, because the API server rejects an
@@ -105,13 +102,8 @@ func Verify(ctx context.Context, r client.Reader, _ cclusternvidiacomv1alpha1.CC
 		return fmt.Errorf("reading ValidatingWebhookConfiguration %s: %w", WebhookConfiguration, err)
 	}
 
-	list := &metav1.PartialObjectMetadataList{}
-	list.SetGroupVersionKind(externalSecrets)
-	if err := r.List(ctx, list, client.Limit(1)); err != nil {
-		if meta.IsNoMatchError(err) {
-			return errors.New("external-secrets.io/v1 ExternalSecret not served; ESO before v0.16.0 does not serve v1")
-		}
-		return fmt.Errorf("listing external-secrets.io/v1 ExternalSecrets: %w", err)
+	if err := catalogs.VerifyKindServed(ctx, r, externalSecret, "ESO before v0.16.0 does not serve v1"); err != nil {
+		return err
 	}
 
 	for _, w := range cfg.Webhooks {

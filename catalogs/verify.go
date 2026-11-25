@@ -19,7 +19,9 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -42,6 +44,26 @@ func VerifyCRDExists(ctx context.Context, r client.Reader, name string) error {
 			return fmt.Errorf("CustomResourceDefinition %s not found", name)
 		}
 		return fmt.Errorf("reading CustomResourceDefinition %s: %w", name, err)
+	}
+	return nil
+}
+
+// VerifyKindServed is a building block for a chart's Verify function: it returns nil when
+// the API server serves kind, such as gateway.networking.k8s.io/v1 HTTPRoute, and
+// otherwise an error saying it is not served, followed by hint. Use it where a CRD can
+// exist without serving the version the catalog needs.
+//
+// It lists the kind's metadata through r's cache, which keeps answering after the kind's
+// CRD is deleted, so check the CRD first. r must be able to list and watch the kind. A
+// read that fails is returned wrapped, not reported as not served.
+func VerifyKindServed(ctx context.Context, r client.Reader, kind schema.GroupVersionKind, hint string) error {
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))
+	if err := r.List(ctx, list, client.Limit(1)); err != nil {
+		if meta.IsNoMatchError(err) {
+			return fmt.Errorf("%s %s not served; %s", kind.GroupVersion(), kind.Kind, hint)
+		}
+		return fmt.Errorf("listing %s %s objects: %w", kind.GroupVersion(), kind.Kind, err)
 	}
 	return nil
 }
