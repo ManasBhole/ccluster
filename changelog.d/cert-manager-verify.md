@@ -6,5 +6,4 @@
   `cert-manager-controller` and has renewed it lately. A configuration left behind by an
   earlier install fails the check, because the API server calls it too. The webhook is
   found by that entry name and followed to its Service, so cert-manager passes under any
-  release name or namespace. The ip operator's ClusterRole now reads
-  ValidatingWebhookConfigurations.
+  release name or namespace.
