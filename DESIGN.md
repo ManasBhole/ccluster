@@ -1223,8 +1223,10 @@ runs one worker (§3).
 - **Real Verifiers.** Not every cluster_base chart has a check of its own yet; the rest
   are still registered with `alwaysVerified` in `verifierregistry.Get()`. The checks that
   exist look for what a component provides: a CRD, a Service with a ready endpoint, an
-  `Available` APIService, or a controller Lease renewed lately. The last three also show
-  that the component's pods run. None checks that a CRD is Established.
+  `Available` APIService, a controller Lease renewed lately, or a ClusterIssuer that
+  reports Ready. The Service, APIService and Lease checks also show that the component's
+  pods run; issuer readiness is stored status and does not. None checks that a CRD is
+  Established.
 - **Per-component verification results.** The `CCLClusterConfig` status reaches the
   `CCLInfraPlane` (§3), but per-component results are not broken out of the `Verified`
   condition's message yet.
