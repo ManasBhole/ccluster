@@ -53,9 +53,11 @@ func VerifyCRDExists(ctx context.Context, r client.Reader, name string) error {
 // otherwise an error saying it is not served, followed by hint. Use it where a CRD can
 // exist without serving the version the catalog needs.
 //
-// It lists the kind's metadata through r's cache, which keeps answering after the kind's
-// CRD is deleted, so check the CRD first. r must be able to list and watch the kind. A
-// read that fails is returned wrapped, not reported as not served.
+// It lists one object's metadata. r must read the kind from the API server: the ip
+// operator lists every such kind in UncachedObjects in cmd/ccluster-ip-operator, since a
+// cached read would watch every object of the kind for the operator's lifetime and keep
+// answering after its CRD is deleted. r must be able to list the kind. A read that fails
+// is returned wrapped, not reported as not served.
 func VerifyKindServed(ctx context.Context, r client.Reader, kind schema.GroupVersionKind, hint string) error {
 	list := &metav1.PartialObjectMetadataList{}
 	list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))

@@ -295,10 +295,12 @@ func expectBaseComponentsFailing(g Gomega, message string) {
 // an empty message, such as a copy that lost its conditions, fails.
 //
 // This, not expectBaseComponentsFailing, proves the ip chart's ClusterRole lets the
-// manager read EndpointSlices and HTTPRoutes: the Prometheus Verifier lists EndpointSlices
+// manager list EndpointSlices and HTTPRoutes: the Prometheus Verifier lists EndpointSlices
 // only once the Service exists, and the gateway_api Verifier lists HTTPRoutes only once
-// their CRD exists. Without either permission the cached List times out and its
-// component stays in the message.
+// their CRD exists. Without the permission the cached EndpointSlice List times out and
+// the uncached HTTPRoute List is Forbidden; either way the component stays in the
+// message. The ClusterRole grants HTTPRoutes list but not watch, so the HTTPRoute List
+// also proves the manager reads them uncached: a cached one could not sync.
 func expectBaseComponentsVerified(g Gomega, message string) {
 	g.Expect(message).NotTo(BeEmpty())
 	g.Expect(message).NotTo(ContainSubstring("catalogs/cluster_base/gateway_api"))

@@ -52,6 +52,10 @@ var crds = []string{
 	"httproutes.gateway.networking.k8s.io",
 }
 
+// HTTPRouteKind is the kind Verify checks is served. The ip operator reads it from the
+// API server, not its cache (see catalogs.VerifyKindServed).
+var HTTPRouteKind = schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"}
+
 // Verify checks that the cluster has what cert_manager's GatewayAPI switch needs: the
 // crds exist and gateway.networking.k8s.io/v1 is served. Without that API, cert-manager's
 // controller exits at startup (pkg/controller/context.go in v1.21.3), so no certificate
@@ -62,7 +66,5 @@ func Verify(ctx context.Context, r client.Reader, _ cclusternvidiacomv1alpha1.CC
 			return err
 		}
 	}
-	return catalogs.VerifyKindServed(ctx, r,
-		schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"},
-		"Gateway API before v1.0 does not serve v1")
+	return catalogs.VerifyKindServed(ctx, r, HTTPRouteKind, "Gateway API before v1.0 does not serve v1")
 }

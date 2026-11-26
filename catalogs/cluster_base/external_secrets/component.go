@@ -75,16 +75,17 @@ const WebhookConfiguration = "externalsecret-validate"
 // webhook is the entry of WebhookConfiguration that validates ExternalSecrets.
 const webhook = "validate.externalsecret.external-secrets.io"
 
-// externalSecret is the kind and version the ExternalSecrets planned in #125 will be
-// written in, which ESO serves from v0.16.0.
-var externalSecret = schema.GroupVersionKind{Group: "external-secrets.io", Version: "v1", Kind: "ExternalSecret"}
+// ExternalSecretKind is the kind and version the ExternalSecrets planned in #125 will be
+// written in, which ESO serves from v0.16.0. The ip operator reads it from the API
+// server, not its cache (see catalogs.VerifyKindServed).
+var ExternalSecretKind = schema.GroupVersionKind{Group: "external-secrets.io", Version: "v1", Kind: "ExternalSecret"}
 
 // Verify checks that ESO serves what ExternalSecrets need: the external-secrets.io/v1
 // API, and a webhook with a ready endpoint, because the API server rejects an
 // ExternalSecret write the webhook does not answer.
 //
-// It starts from WebhookConfiguration rather than the API because the cache keeps
-// answering for a kind after its CRD is deleted, but sees a deleted configuration.
+// It starts from WebhookConfiguration rather than the API, so an ESO that is not
+// installed reads as missing rather than too old.
 //
 // Like metrics_server's check, it checks what ESO provides rather than this chart's
 // objects, so an ESO installed by other means passes too. Nothing in the chart depends
@@ -102,7 +103,7 @@ func Verify(ctx context.Context, r client.Reader, _ cclusternvidiacomv1alpha1.CC
 		return fmt.Errorf("reading ValidatingWebhookConfiguration %s: %w", WebhookConfiguration, err)
 	}
 
-	if err := catalogs.VerifyKindServed(ctx, r, externalSecret, "ESO before v0.16.0 does not serve v1"); err != nil {
+	if err := catalogs.VerifyKindServed(ctx, r, ExternalSecretKind, "ESO before v0.16.0 does not serve v1"); err != nil {
 		return err
 	}
 
