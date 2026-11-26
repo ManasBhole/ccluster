@@ -66,11 +66,10 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 		// credentials is the opaque payload the controller must clone byte for byte.
 		// "name" deliberately disagrees with the CCLInfraPlane's name: the operator
 		// owns that key and must overwrite it.
-		//nolint:goconst // the cluster Secret's keys, as Argo CD reads them
 		credentials := map[string]string{
-			"name":   "a-name-the-operator-should-replace",
-			"server": serverURL,
-			"config": `{"bearerToken":"fake-token"}`,
+			"name":                                "a-name-the-operator-should-replace",
+			argocdv1alpha1.ClusterSecretServerKey: serverURL,
+			argocdv1alpha1.ClusterSecretConfigKey: `{"bearerToken":"fake-token"}`,
 		}
 
 		ctx := context.Background()
@@ -471,7 +470,7 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 
 			By("corrupting the mirrored Secret")
 			mirror := getMirror()
-			mirror.Data["config"] = []byte("tampered")
+			mirror.Data[argocdv1alpha1.ClusterSecretConfigKey] = []byte("tampered")
 			delete(mirror.Labels, argocdv1alpha1.SecretTypeLabel)
 			Expect(k8sClient.Update(ctx, mirror)).To(Succeed())
 
@@ -481,7 +480,7 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 			Expect(k8sClient.Get(ctx, secretNamespacedName, source)).To(Succeed())
 
 			restored := getMirror()
-			Expect(restored.Data).To(HaveKeyWithValue("config", source.Data["config"]))
+			Expect(restored.Data).To(HaveKeyWithValue(argocdv1alpha1.ClusterSecretConfigKey, source.Data[argocdv1alpha1.ClusterSecretConfigKey]))
 			Expect(restored.Data).To(HaveKeyWithValue("name", []byte(mirrorName)))
 			Expect(restored.Labels).To(HaveKeyWithValue(argocdv1alpha1.SecretTypeLabel, argocdv1alpha1.SecretTypeCluster))
 		})
@@ -499,7 +498,7 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 						annotationInfraPlaneNamespace: otherNamespace,
 					},
 				},
-				StringData: map[string]string{"config": foreign},
+				StringData: map[string]string{argocdv1alpha1.ClusterSecretConfigKey: foreign},
 			})).To(Succeed())
 
 			infraPlane := settle()
@@ -509,7 +508,7 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 			Expect(condition.Reason).To(Equal(cclusternvidiacomv1alpha1.CCLInfraPlaneReasonClusterSecretConflict))
 
-			Expect(getMirror().Data).To(HaveKeyWithValue("config", []byte(foreign)))
+			Expect(getMirror().Data).To(HaveKeyWithValue(argocdv1alpha1.ClusterSecretConfigKey, []byte(foreign)))
 		})
 
 		It("should delete the mirrored Secret and the AppProject when the CCLInfraPlane is deleted", func() {
@@ -940,7 +939,7 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 			})
 
 			It("should write the CCLClusterConfig into its own cluster for a Secret without a server", func() {
-				createSecret(map[string]string{"config": `{"tlsClientConfig":{"insecure":false}}`})
+				createSecret(map[string]string{argocdv1alpha1.ClusterSecretConfigKey: `{"tlsClientConfig":{"insecure":false}}`})
 
 				infraPlane := settle()
 
@@ -954,8 +953,8 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 
 			It("should report UnsupportedCredentials for an exec plugin", func() {
 				createSecret(map[string]string{
-					"server": serverURL,
-					"config": `{"execProviderConfig":{"command":"gke-gcloud-auth-plugin"}}`,
+					argocdv1alpha1.ClusterSecretServerKey: serverURL,
+					argocdv1alpha1.ClusterSecretConfigKey: `{"execProviderConfig":{"command":"gke-gcloud-auth-plugin"}}`,
 				})
 
 				infraPlane := settle()
@@ -965,7 +964,7 @@ var _ = Describe("CCLInfraPlane Controller", func() {
 			})
 
 			It("should report InvalidCredentials for a config that is not JSON", func() {
-				createSecret(map[string]string{"server": serverURL, "config": "{not json"})
+				createSecret(map[string]string{argocdv1alpha1.ClusterSecretServerKey: serverURL, argocdv1alpha1.ClusterSecretConfigKey: "{not json"})
 
 				infraPlane := settle()
 
